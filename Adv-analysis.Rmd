@@ -1,0 +1,148 @@
+---
+title: "Advertising-Preference-Analysis"
+author: "Zhibo Yang"
+date: "2026-05-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+
+Q_A <- read.csv("../Data/A_135.csv",
+                fileEncoding = "GB18030",
+                stringsAsFactors = FALSE)
+
+Q_B <- read.csv("../Data/B_135.csv",
+                fileEncoding = "GB18030",
+                stringsAsFactors = FALSE)
+
+Q_A <- Q_A %>%
+  mutate(Group = "A")
+
+Q_B <- Q_B %>%
+  mutate(Group = "B")
+
+data_all <- bind_rows(Q_A, Q_B)
+
+data_all <- data_all %>%
+  rename(
+    ID = 序号,
+    Gender = Q21,
+    Age = Q22
+  ) %>%
+  mutate(
+    Group = factor(Group),
+    Gender = factor(Gender),
+    Age = factor(Age)
+  )
+
+question_items <- paste0("Q", 1:20)
+
+missing_summary <- data_all %>%
+  summarise(across(everything(), ~ sum(is.na(.))))
+
+range_check <- data_all %>%
+  summarise(across(
+    all_of(question_items),
+    list(
+      min = ~ min(., na.rm = TRUE),
+      max = ~ max(., na.rm = TRUE)
+    )
+  ))
+
+duplicate_rows <- data_all %>%
+  group_by(Group, ID) %>%
+  filter(n() > 1)
+
+gender_table <- data_all %>%
+  count(Group, Gender) %>%
+  group_by(Group) %>%
+  mutate(
+    Percent = round(n / sum(n) * 100, 2)
+  )
+
+age_table <- data_all %>%
+  count(Group, Age) %>%
+  group_by(Group) %>%
+  mutate(
+    Percent = round(n / sum(n) * 100, 2)
+  )
+
+data_all <- data_all %>%
+  rowwise() %>%
+  mutate(
+    Total_Score = sum(c_across(all_of(question_items)), na.rm = TRUE),
+    Mean_Score = mean(c_across(all_of(question_items)), na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+data_long <- data_all %>%
+  pivot_longer(
+    cols = all_of(question_items),
+    names_to = "Question",
+    values_to = "Score"
+  )
+
+item_mean_long <- data_long %>%
+  group_by(Group, Question) %>%
+  summarise(
+    Mean = round(mean(Score, na.rm = TRUE), 2),
+    SD = round(sd(Score, na.rm = TRUE), 2),
+    N = n(),
+    .groups = "drop"
+  )
+
+group_score_summary <- data_all %>%
+  group_by(Group) %>%
+  summarise(
+    N = n(),
+    Mean_Total = round(mean(Total_Score, na.rm = TRUE), 2),
+    SD_Total = round(sd(Total_Score, na.rm = TRUE), 2),
+    Mean_Score = round(mean(Mean_Score, na.rm = TRUE), 2),
+    SD_Score = round(sd(Mean_Score, na.rm = TRUE), 2),
+    .groups = "drop"
+  )
+
+item_t_tests <- data_long %>%
+  group_by(Question) %>%
+  summarise(
+    Mean_A = round(mean(Score[Group == "A"], na.rm = TRUE), 2),
+    Mean_B = round(mean(Score[Group == "B"], na.rm = TRUE), 2),
+    p_value = round(t.test(Score ~ Group)$p.value, 4),
+    .groups = "drop"
+  )
+
+gender_score_summary <- data_all %>%
+  group_by(Group, Gender) %>%
+  summarise(
+    N = n(),
+    Mean_Score = round(mean(Mean_Score, na.rm = TRUE), 2),
+    SD_Score = round(sd(Mean_Score, na.rm = TRUE), 2),
+    .groups = "drop"
+  )
+
+age_score_summary <- data_all %>%
+  group_by(Group, Age) %>%
+  summarise(
+    N = n(),
+    Mean_Score = round(mean(Mean_Score, na.rm = TRUE), 2),
+    SD_Score = round(sd(Mean_Score, na.rm = TRUE), 2),
+    .groups = "drop"
+  )
+
+missing_summary
+range_check
+duplicate_rows
+gender_table
+age_table
+group_score_summary
+item_mean_long
+item_t_tests
+gender_score_summary
+age_score_summary
+```
