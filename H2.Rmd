@@ -1,0 +1,91 @@
+---
+title: "H2"
+author: "Zhibo Yang"
+date: "2026-05-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+packages <- c("tidyverse", "psych", "rstatix")
+
+installed <- packages %in% rownames(installed.packages())
+if (any(!installed)) install.packages(packages[!installed])
+
+library(tidyverse)
+library(psych)
+library(rstatix)
+
+A <- read.csv("../Data/A_135.CSV", stringsAsFactors = FALSE)
+B <- read.csv("../Data/B_135.csv", stringsAsFactors = FALSE, fileEncoding = "latin1")
+
+# A = Informational advertising
+# B = Transformational advertising
+A$Ad_Type <- "Informational"
+B$Ad_Type <- "Transformational"
+
+data <- bind_rows(A, B)
+
+data <- data %>%
+  mutate(across(Q1:Q20, as.numeric))
+
+data <- data %>%
+  rowwise() %>%
+  mutate(
+    Purchase_Intention_Median = median(c_across(Q1:Q5), na.rm = TRUE),
+    
+    # manipulation check
+    Informational_Check = median(c_across(c(Q17, Q18)), na.rm = TRUE),
+    Transformational_Check = median(c_across(c(Q19, Q20)), na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+alpha_purchase <- psych::alpha(data %>% select(Q1:Q5))
+print(alpha_purchase)
+
+descriptive_stats_median <- data %>%
+  group_by(Ad_Type) %>%
+  summarise(
+    N = n(),
+    Median_PI = median(Purchase_Intention_Median, na.rm = TRUE),
+    Q1_PI = quantile(Purchase_Intention_Median, 0.25, na.rm = TRUE),
+    Q3_PI = quantile(Purchase_Intention_Median, 0.75, na.rm = TRUE),
+    IQR_PI = IQR(Purchase_Intention_Median, na.rm = TRUE),
+    Median_Informational_Check = median(Informational_Check, na.rm = TRUE),
+    Median_Transformational_Check = median(Transformational_Check, na.rm = TRUE)
+  )
+
+print(descriptive_stats_median)
+
+h2_wilcox <- wilcox.test(
+  Purchase_Intention_Median ~ Ad_Type,
+  data = data,
+  alternative = "less",
+  exact = FALSE,
+  correct = TRUE
+)
+
+print(h2_wilcox)
+
+effect_size_h2 <- data %>%
+  wilcox_effsize(
+    Purchase_Intention_Median ~ Ad_Type,
+    alternative = "less"
+  )
+
+print(effect_size_h2)
+
+ggplot(data, aes(x = Ad_Type, y = Purchase_Intention_Median)) +
+  geom_boxplot(width = 0.5) +
+  geom_jitter(width = 0.15, alpha = 0.4) +
+  stat_summary(fun = median, geom = "point", size = 3) +
+  labs(
+    title = "Purchase Intention Median by Advertising Type",
+    x = "Advertising Type",
+    y = "Purchase Intention Median"
+  ) +
+  theme_minimal()
+
+```
+
