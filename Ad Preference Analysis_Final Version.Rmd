@@ -1,0 +1,424 @@
+---
+title: "Final"
+author: "Zhibo Yang"
+date: "2026-05-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+packages <- c(
+  "tidyverse",  # includes dplyr, tidyr, readr, ggplot2, etc.
+  "dplyr",
+  "tidyr",
+  "readr",
+  "ggplot2",
+  "psych",
+  "car",
+  "effsize",
+  "rstatix",
+  "coin"
+)
+
+installed <- packages %in% rownames(installed.packages())
+if (any(!installed)) {
+  install.packages(packages[!installed])
+}
+
+invisible(lapply(packages, library, character.only = TRUE))
+
+Q_A <- read.csv(
+  "../Data/A_135.csv",
+  fileEncoding = "GB18030",
+  stringsAsFactors = FALSE
+)
+
+Q_B <- read.csv(
+  "../Data/B_135.csv",
+  fileEncoding = "GB18030",
+  stringsAsFactors = FALSE
+)
+
+Q_A <- Q_A %>%
+  mutate(
+    Group = "A",
+    Ad_Type = "Informational"
+  )
+
+Q_B <- Q_B %>%
+  mutate(
+    Group = "B",
+    Ad_Type = "Transformational"
+  )
+
+data_all <- bind_rows(Q_A, Q_B)
+
+data_all <- data_all %>%
+  rename(
+    ID = 序号,
+    Gender = Q21,
+    Age = Q22
+  ) %>%
+  mutate(
+    Group = factor(Group, levels = c("A", "B")),
+    Ad_Type = factor(
+      Ad_Type,
+      levels = c("Informational", "Transformational")
+    ),
+    Gender = factor(Gender),
+    Age = factor(Age)
+  )
+
+question_items <- paste0("Q", 1:20)
+purchase_items <- paste0("Q", 1:5)
+ad_attitude_items <- paste0("Q", 6:9)
+informational_check_items <- c("Q17", "Q18")
+transformational_check_items <- c("Q19", "Q20")
+
+data_all <- data_all %>%
+  mutate(across(all_of(question_items), as.numeric))
+
+required_items <- c(
+  question_items,
+  purchase_items,
+  ad_attitude_items,
+  informational_check_items,
+  transformational_check_items
+)
+
+missing_cols <- setdiff(required_items, names(data_all))
+
+if (length(missing_cols) > 0) {
+  stop(paste("Missing required columns:", paste(missing_cols, collapse = ", ")))
+}
+
+missing_summary <- data_all %>%
+  summarise(across(everything(), ~ sum(is.na(.))))
+
+range_check <- data_all %>%
+  summarise(across(
+    all_of(question_items),
+    list(
+      min = ~ min(., na.rm = TRUE),
+      max = ~ max(., na.rm = TRUE)
+    )
+  ))
+
+duplicate_rows <- data_all %>%
+  group_by(Group, ID) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+gender_table <- data_all %>%
+  count(Group, Gender) %>%
+  group_by(Group) %>%
+  mutate(Percent = round(n / sum(n) * 100, 2)) %>%
+  ungroup()
+
+age_table <- data_all %>%
+  count(Group, Age) %>%
+  group_by(Group) %>%
+  mutate(Percent = round(n / sum(n) * 100, 2)) %>%
+  ungroup()
+
+data_all <- data_all %>%
+  rowwise() %>%
+  mutate(
+    Total_Score = sum(c_across(all_of(question_items)), na.rm = TRUE),
+    Mean_Score = mean(c_across(all_of(question_items)), na.rm = TRUE),
+    Purchase_Intention_Mean = mean(c_across(all_of(purchase_items)), na.rm = TRUE),
+    Purchase_Intention_Median = median(c_across(all_of(purchase_items)), na.rm = TRUE),
+    Ad_Attitude_Median = median(c_across(all_of(ad_attitude_items)), na.rm = TRUE),
+    Informational_Check = median(c_across(all_of(informational_check_items)), na.rm = TRUE),
+    Transformational_Check = median(c_across(all_of(transformational_check_items)), na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+data_long <- data_all %>%
+  pivot_longer(
+    cols = all_of(question_items),
+    names_to = "Question",
+    values_to = "Score"
+  )
+
+item_mean_long <- data_long %>%
+  group_by(Group, Question) %>%
+  summarise(
+    Mean = round(mean(Score, na.rm = TRUE), 2),
+    SD = round(sd(Score, na.rm = TRUE), 2),
+    N = sum(!is.na(Score)),
+    .groups = "drop"
+  )
+
+group_score_summary <- data_all %>%
+  group_by(Group) %>%
+  summarise(
+    N = n(),
+    Mean_Total = round(mean(Total_Score, na.rm = TRUE), 2),
+    SD_Total = round(sd(Total_Score, na.rm = TRUE), 2),
+    Mean_Score = round(mean(Mean_Score, na.rm = TRUE), 2),
+    SD_Score = round(sd(Mean_Score, na.rm = TRUE), 2),
+    .groups = "drop"
+  )
+
+item_t_tests <- data_long %>%
+  group_by(Question) %>%
+  summarise(
+    Mean_A = round(mean(Score[Group == "A"], na.rm = TRUE), 2),
+    Mean_B = round(mean(Score[Group == "B"], na.rm = TRUE), 2),
+    p_value = round(t.test(Score ~ Group)$p.value, 4),
+    .groups = "drop"
+  )
+
+gender_score_summary <- data_all %>%
+  group_by(Group, Gender) %>%
+  summarise(
+    N = n(),
+    Mean_Score = round(mean(Mean_Score, na.rm = TRUE), 2),
+    SD_Score = round(sd(Mean_Score, na.rm = TRUE), 2),
+    .groups = "drop"
+  )
+
+age_score_summary <- data_all %>%
+  group_by(Group, Age) %>%
+  summarise(
+    N = n(),
+    Mean_Score = round(mean(Mean_Score, na.rm = TRUE), 2),
+    SD_Score = round(sd(Mean_Score, na.rm = TRUE), 2),
+    .groups = "drop"
+  )
+
+missing_summary
+range_check
+duplicate_rows
+gender_table
+age_table
+group_score_summary
+item_mean_long
+item_t_tests
+gender_score_summary
+age_score_summary
+
+alpha_ad_attitude <- psych::alpha(data_all %>% select(all_of(ad_attitude_items)))
+print(alpha_ad_attitude)
+
+h1_summary <- data_all %>%
+  group_by(Group) %>%
+  summarise(
+    N = n(),
+    Median = median(Purchase_Intention_Mean, na.rm = TRUE),
+    Q1 = quantile(Purchase_Intention_Mean, 0.25, na.rm = TRUE),
+    Q3 = quantile(Purchase_Intention_Mean, 0.75, na.rm = TRUE),
+    IQR = IQR(Purchase_Intention_Mean, na.rm = TRUE),
+    Mean = mean(Purchase_Intention_Mean, na.rm = TRUE),
+    SD = sd(Purchase_Intention_Mean, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+print(h1_summary)
+
+h1_wilcox <- wilcox.test(
+  Purchase_Intention_Median ~ Group,
+  data = data_all,
+  alternative = "two.sided",
+  exact = FALSE,
+  correct = TRUE
+)
+
+print(h1_wilcox)
+
+h1_effect_size_r <- data_all %>%
+  wilcox_effsize(
+    Purchase_Intention_Median ~ Group,
+    alternative = "two.sided"
+  )
+
+print(h1_effect_size_r)
+
+h1_cliff_delta <- effsize::cliff.delta(
+  Purchase_Intention_Median ~ Group,
+  data = data_all
+)
+
+print(h1_cliff_delta)
+
+h1_normality <- data_all %>%
+  group_by(Group) %>%
+  shapiro_test(Purchase_Intention_Median)
+
+print(h1_normality)
+
+h1_levene <- car::leveneTest(
+  Purchase_Intention_Median ~ Group,
+  data = data_all
+)
+
+print(h1_levene)
+
+ggplot(data_all, aes(x = Group, y = Purchase_Intention_Median)) +
+  geom_boxplot(width = 0.5) +
+  geom_jitter(width = 0.15, alpha = 0.4) +
+  stat_summary(fun = median, geom = "point", size = 3) +
+  labs(
+    title = "H1: Purchase Intention Mean by Group",
+    x = "Group",
+    y = "Purchase Intention Median"
+  ) +
+  theme_minimal()
+
+h2_summary <- data_all %>%
+  group_by(Ad_Type) %>%
+  summarise(
+    N = n(),
+    Median_PI = median(Purchase_Intention_Median, na.rm = TRUE),
+    Q1_PI = quantile(Purchase_Intention_Median, 0.25, na.rm = TRUE),
+    Q3_PI = quantile(Purchase_Intention_Median, 0.75, na.rm = TRUE),
+    IQR_PI = IQR(Purchase_Intention_Median, na.rm = TRUE),
+    Median_Informational_Check = median(Informational_Check, na.rm = TRUE),
+    Median_Transformational_Check = median(Transformational_Check, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+print(h2_summary)
+
+h2_wilcox <- wilcox.test(
+  Purchase_Intention_Median ~ Ad_Type,
+  data = data_all,
+  alternative = "less",
+  exact = FALSE,
+  correct = TRUE
+)
+
+print(h2_wilcox)
+
+h2_effect_size <- data_all %>%
+  wilcox_effsize(
+    Purchase_Intention_Median ~ Ad_Type,
+    alternative = "less"
+  )
+
+print(h2_effect_size)
+
+h2_cliff_delta <- effsize::cliff.delta(
+  Purchase_Intention_Median ~ Ad_Type,
+  data = data_all
+)
+
+print(h2_cliff_delta)
+
+ggplot(data_all, aes(x = Ad_Type, y = Purchase_Intention_Median)) +
+  geom_boxplot(width = 0.5) +
+  geom_jitter(width = 0.15, alpha = 0.4) +
+  stat_summary(fun = median, geom = "point", size = 3) +
+  labs(
+    title = "H2: Purchase Intention Median by Advertising Type",
+    x = "Advertising Type",
+    y = "Purchase Intention Median"
+  ) +
+  theme_minimal()
+
+h3_rank_data <- data_all %>%
+  mutate(
+    Ad_Attitude_Rank = rank(
+      Ad_Attitude_Median,
+      ties.method = "average"
+    )
+  )
+
+h3_summary <- h3_rank_data %>%
+  group_by(Ad_Type) %>%
+  summarise(
+    N = n(),
+    Median = median(Ad_Attitude_Median, na.rm = TRUE),
+    Q1 = quantile(Ad_Attitude_Median, 0.25, na.rm = TRUE),
+    Q3 = quantile(Ad_Attitude_Median, 0.75, na.rm = TRUE),
+    IQR = IQR(Ad_Attitude_Median, na.rm = TRUE),
+    Mean_Rank = mean(Ad_Attitude_Rank, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+print(h3_summary)
+
+h3_wilcox <- wilcox.test(
+  Ad_Attitude_Median ~ Ad_Type,
+  data = data_all,
+  alternative = "less",
+  exact = FALSE,
+  correct = TRUE
+)
+
+print(h3_wilcox)
+
+h3_effect_size <- data_all %>%
+  wilcox_effsize(
+    Ad_Attitude_Median ~ Ad_Type,
+    alternative = "less"
+  )
+
+print(h3_effect_size)
+
+h3_cliff_delta <- effsize::cliff.delta(
+  Ad_Attitude_Median ~ Ad_Type,
+  data = data_all
+)
+
+print(h3_cliff_delta)
+
+h3_coin_test <- coin::wilcox_test(
+  Ad_Attitude_Median ~ Ad_Type,
+  data = data_all,
+  alternative = "less",
+  distribution = "asymptotic"
+)
+
+print(h3_coin_test)
+
+ggplot(data_all, aes(x = Ad_Type, y = Ad_Attitude_Median)) +
+  geom_boxplot(width = 0.5) +
+  geom_jitter(width = 0.15, alpha = 0.4) +
+  stat_summary(fun = median, geom = "point", size = 3) +
+  labs(
+    title = "H3: Advertisement Attitude by Advertising Type",
+    x = "Advertising Type",
+    y = "Advertisement Attitude Median"
+  ) +
+  theme_minimal()
+
+hypothesis_summary <- tibble(
+  Hypothesis = c("H1", "H2", "H3"),
+  Dependent_Variable = c(
+    "Purchase_Intention_Median: median of Q1-Q5",
+    "Purchase_Intention_Median: median of Q1-Q5",
+    "Ad_Attitude_Median: median of Q6-Q9"
+  ),
+  Grouping_Variable = c(
+    "Group: A vs B",
+    "Ad_Type: Informational vs Transformational",
+    "Ad_Type: Informational vs Transformational"
+  ),
+  Test = c(
+    "Wilcoxon rank-sum test, two-sided",
+    "Wilcoxon rank-sum test, one-sided: Informational < Transformational",
+    "Wilcoxon rank-sum test, one-sided: Informational < Transformational"
+  ),
+  P_Value = c(
+    h1_wilcox$p.value,
+    h2_wilcox$p.value,
+    h3_wilcox$p.value
+  )
+) %>%
+  mutate(
+    P_Value = round(P_Value, 4),
+    Decision_0.05 = if_else(
+      P_Value < 0.05,
+      "Significant",
+      "Not significant"
+    )
+  )
+
+print(hypothesis_summary)
+
+```
+
+```
